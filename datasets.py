@@ -1,6 +1,5 @@
 import pandas as pd
 import random
-import os
 
 class CodeBlock(object):
     def __init__(self, file_path, description, code_content, language, _type):
@@ -54,36 +53,6 @@ class Example(object):
                 f"[Related Files]:\n{len(self.related_files)} files\n"
         )
     
-# def load_test_dataset(args, datasetname, language):
-#     """
-#     Loads a dataset.
-#     :param args: Parameters containing various configurations.
-#     :param datasetname: The name of the dataset to load.
-#     :param language: The language of the data to load.
-#     :return: The loaded dataset.
-#     """
-#     if datasetname == 'repoeval' and language != 'func_level':
-#         data_frame1 = pd.read_parquet(f"data/{datasetname}/{language}/test_0.parquet")
-#         data_frame2 = pd.read_parquet(f"data/{datasetname}/{language}/test_1.parquet")
-#         data_frame = pd.concat([data_frame1, data_frame2], ignore_index=True)
-#     else:
-#         data_frame = pd.read_parquet(f"data/{datasetname}/{language}/test.parquet")
-
-#     # data_frame = data_frame.loc[data_frame['task_id'] == 'project_cc_python/210']
-    
-#     if datasetname == 'repoeval':
-#         language = 'python'
-
-#     if args.debug:
-#         data_frame = data_frame.sample(100)
-#     dataset = []
-#     for item in data_frame[["task_id", "path", "left_context", "right_context", "crossfile_context", "groundtruth"]].values:
-#         cross_files = item[4] if len(item[4]) > 0 else [{'path': "", "text": "Don't need cross file context for completion"}]
-#         cross_files = [CodeBlock(x["path"], f"file path: {x['path']}\nlines: {0}-{len(x['text'].splitlines())}", x["text"], language, '') for x in cross_files]
-#         dataset.append(Example(item[0], item[1], item[2], item[3], cross_files, item[5], language))
-    
-#     return dataset
-
 def load_test_dataset(args, datasetname, language):
     """
     Loads a dataset.
@@ -93,11 +62,11 @@ def load_test_dataset(args, datasetname, language):
     :return: The loaded dataset.
     """
     if datasetname == 'repoeval' and language != 'func_level':
-        data_frame1 = pd.read_parquet(f"data/{datasetname}/{language}/test_0_inference.parquet")
-        data_frame2 = pd.read_parquet(f"data/{datasetname}/{language}/test_1_inference.parquet")
+        data_frame1 = pd.read_parquet(f"data/{datasetname}/{language}/test_0.parquet")
+        data_frame2 = pd.read_parquet(f"data/{datasetname}/{language}/test_1.parquet")
         data_frame = pd.concat([data_frame1, data_frame2], ignore_index=True)
     else:
-        data_frame = pd.read_parquet(f"data/{datasetname}/{language}/test_inference.parquet")
+        data_frame = pd.read_parquet(f"data/{datasetname}/{language}/test.parquet")
 
     # data_frame = data_frame.loc[data_frame['task_id'] == 'project_cc_python/210']
     
@@ -113,35 +82,6 @@ def load_test_dataset(args, datasetname, language):
         dataset.append(Example(item[0], item[1], item[2], item[3], cross_files, item[5], language))
     
     return dataset
-
-def load_github_repos_dataset():
-    # Read the Parquet file into a DataFrame
-    df = pd.read_parquet("data/github_repos/data_for_synthesis/train_inference.parquet")
-    
-    # Convert the DataFrame back to a list of Example objects
-    training_datasets_examples = []
-    for _, row in df.iterrows():
-        related_files = [
-            CodeBlock(
-                file_path=cb['file_path'],
-                description=cb['description'],
-                code_content=cb['code_content'],
-                language=cb['language'],
-                _type=cb['_type']
-            )
-            for cb in row['related_files']
-        ]
-        example = Example(
-            task_id=row['task_id'],
-            file_path=row['file_path'],
-            left_context=row['left_context'],
-            right_context=row['right_context'],
-            related_files=related_files,
-            target_code=row['target_code'],
-            language=row['language']
-        )
-        training_datasets_examples.append(example)
-    return training_datasets_examples
 
 def load_train_and_valid_dataset():
     """
@@ -166,6 +106,7 @@ def load_train_and_valid_dataset():
     random.shuffle(validation_datasets)
 
     return training_datasets, validation_datasets
+
 
 def construct_dataset(raw_data, num_samples):
     """
@@ -211,91 +152,3 @@ def construct_dataset(raw_data, num_samples):
             try_count += 1
     
     return examples
-
-
-def save_train_for_data_synthesis(examples, file_path="data/github_repos/data_for_synthesis/train.parquet"):
-    """
-    Saves a list of Example objects to a Parquet file.
-    :param examples: List of Example objects.
-    :param file_path: Path to save the Parquet file.
-    """
-    # Convert Example objects to a dictionary
-    data = {
-        'task_id': [example.task_id for example in examples],
-        'file_path': [example.file_path for example in examples],
-        'left_context': [example.left_context for example in examples],
-        'right_context': [example.right_context for example in examples],
-        'target_code': [example.target_code for example in examples],
-        'language': [example.language for example in examples],
-        'related_files': [
-            [
-                {
-                    'file_path': cb.file_path,
-                    'description': cb.description,
-                    'code_content': cb.code_content,
-                    'language': cb.language,
-                    '_type': cb._type
-                }
-                for cb in example.related_files
-            ]
-            for example in examples
-        ]
-    }
-    
-    # Create a DataFrame from the dictionary
-    df = pd.DataFrame(data)
-    
-    # Save the DataFrame to a Parquet file
-    df.to_parquet(file_path)
-
-def load_and_construct_train_for_data_synthesis():
-    """
-    Loads the training dataset for inference.
-    :return: The training dataset without valid dataset.
-    """
-    if not os.path.exists(f"data/github_repos/data_for_synthesis"):
-        # load training dataset and construct
-        training_datasets = []
-        for language in ["python", "java"]:
-            data_frame = pd.read_parquet(f"data/github_repos/{language}/train.parquet")
-            all_data = []
-            temp_data = []
-            for x in data_frame[["path", "content", "first"]].values:
-                if x[-1]:  # At the start of a new file
-                    if len(temp_data) > 1:
-                        all_data.append((temp_data, language))
-                    temp_data = []
-                temp_data.append([x[0], x[1]])
-            training_datasets.extend(all_data)
-        training_datasets_examples = construct_dataset(training_datasets, len(training_datasets))
-        # makedirs and save dataset
-        os.makedirs(f"data/github_repos/data_for_synthesis", exist_ok=True)
-        save_train_for_data_synthesis(training_datasets_examples)
-    else:
-        # Read the Parquet file into a DataFrame
-        df = pd.read_parquet("data/github_repos/data_for_synthesis/train.parquet")
-        
-        # Convert the DataFrame back to a list of Example objects
-        training_datasets_examples = []
-        for _, row in df.iterrows():
-            related_files = [
-                CodeBlock(
-                    file_path=cb['file_path'],
-                    description=cb['description'],
-                    code_content=cb['code_content'],
-                    language=cb['language'],
-                    _type=cb['_type']
-                )
-                for cb in row['related_files']
-            ]
-            example = Example(
-                task_id=row['task_id'],
-                file_path=row['file_path'],
-                left_context=row['left_context'],
-                right_context=row['right_context'],
-                related_files=related_files,
-                target_code=row['target_code'],
-                language=row['language']
-            )
-            training_datasets_examples.append(example)
-    return training_datasets_examples

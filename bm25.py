@@ -129,21 +129,24 @@ class TaskSpecificBM25:
             batch_result.append((example.task_id, code_blocks, bm25_index))
         return batch_result
 
-    def query(self, task_ids: List[int], queries: List[str], topk: int):
+    def query(self, task_ids: List[int], keyword_lists: List[List[str]], topk: int):
+        """
+        Use key word lists to retrieve. 
+        
+        Args:
+            task_ids: task id lists
+            keyword_lists: key word lists(only a sample)
+            topk: number of best top k retrieval results
+        
+        Returns:
+            top_k lists
+        """
         results = []
-        for task_id, query in zip(task_ids, queries):
+        for task_id, keywords in zip(task_ids, keyword_lists):
             bm25_index = self.bm25_indices.get(task_id)
             if bm25_index:
-                query_tokens = query.split()
-                scores = bm25_index.get_scores(query_tokens)
-
-                # topk_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:topk]
-                # task_results = [self.code_blocks[task_id][i] for i in topk_indices]
-                # results.append(task_results)
-
-                #  ||
-                # \||/
-                #  \/
+                # 直接使用关键词列表，不需要分词
+                scores = bm25_index.get_scores(keywords)
 
                 sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
                 fixed_block_indices = []
@@ -162,8 +165,6 @@ class TaskSpecificBM25:
                         mini_block_indices.append(i)
                     
                 topk_fixed_blocks = [self.code_blocks[task_id][i] for i in fixed_block_indices[:topk]]
-                # topk_signature_blocks = [self.code_blocks[task_id][i] for i in signature_block_indices[:topk]]
-                # topk_full_func_blocks = [self.code_blocks[task_id][i] for i in full_func_block_indices[:topk]]
                 topk_mini_blocks = [self.code_blocks[task_id][i] for i in mini_block_indices[:topk]]
 
                 if self.args.enable_fixed_block:
@@ -173,5 +174,99 @@ class TaskSpecificBM25:
                 results.append(task_results)
             else:
                 results.append([])
-            #results.append([CodeBlock("__init__.py", 0, 0, "") for _ in range(topk+1)])
         return results
+
+    def query_batch(self, task_ids: List[int], queries_list: List[List[List[str]]], topk: int):
+        """
+        Like query, but support multi-sampling
+        
+        :param task_ids: task_id [num_examples]
+        :param queries_list: shape is [num_examples][num_samples][keywords_per_sample]
+        :return: shape is [num_examples][topk]
+        """
+        results = []
+        for task_id, sample_queries in zip(task_ids, queries_list):
+            sample_results = []
+            
+            # 对每个采样关键词单独检索
+            for query in sample_queries:
+                bm25_index = self.bm25_indices.get(task_id)
+                if not bm25_index:
+                    sample_results.append([])
+                    continue
+                
+                # 执行BM25查询，将关键词列表作为一个整体查询
+                scores = bm25_index.get_scores(query)
+                
+                # 按分数排序
+                sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+                
+                # 应用块类型过滤策略
+                fixed_blocks = []
+                mini_blocks = []
+                for i in sorted_indices:
+                    block = self.code_blocks[task_id][i]
+                    if block._type == "fixed_block":
+                        fixed_blocks.append(block)
+                    elif block._type == "mini_block":
+                        mini_blocks.append(block)
+                
+                # 根据参数选择块类型
+                if self.args.enable_fixed_block:
+                    final_blocks = fixed_blocks[:topk]
+                else:
+                    final_blocks = mini_blocks[:topk]
+                
+                sample_results.append(final_blocks)
+            
+            results.append(sample_results)
+
+        return results
+
+
+    # def query(self, task_ids: List[int], queries: List[str], topk: int):
+    #     results = []
+    #     for task_id, query in zip(task_ids, queries):
+    #         bm25_index = self.bm25_indices.get(task_id)
+    #         if bm25_index:
+    #             query_tokens = query.split()
+    #             scores = bm25_index.get_scores(query_tokens)
+
+    #             # topk_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:topk]
+    #             # task_results = [self.code_blocks[task_id][i] for i in topk_indices]
+    #             # results.append(task_results)
+
+    #             #  ||
+    #             # \||/
+    #             #  \/
+
+    #             sorted_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)
+    #             fixed_block_indices = []
+    #             signature_block_indices = []
+    #             full_func_block_indices = []
+    #             mini_block_indices = []
+    #             for i in sorted_indices:
+    #                 block = self.code_blocks[task_id][i]
+    #                 if block._type == "fixed_block":
+    #                     fixed_block_indices.append(i)
+    #                 elif block._type == "signature_block":
+    #                     signature_block_indices.append(i)
+    #                 elif block._type == "full_func_block":
+    #                     full_func_block_indices.append(i)
+    #                 elif block._type == "mini_block":
+    #                     mini_block_indices.append(i)
+                    
+    #             topk_fixed_blocks = [self.code_blocks[task_id][i] for i in fixed_block_indices[:topk]]
+    #             # topk_signature_blocks = [self.code_blocks[task_id][i] for i in signature_block_indices[:topk]]
+    #             # topk_full_func_blocks = [self.code_blocks[task_id][i] for i in full_func_block_indices[:topk]]
+    #             topk_mini_blocks = [self.code_blocks[task_id][i] for i in mini_block_indices[:topk]]
+
+    #             if self.args.enable_fixed_block:
+    #                 task_results = topk_fixed_blocks
+    #             else:
+    #                 task_results = topk_mini_blocks
+    #             results.append(task_results)
+    #         else:
+    #             results.append([])
+    #         #results.append([CodeBlock("__init__.py", 0, 0, "") for _ in range(topk+1)])
+    #     return results
