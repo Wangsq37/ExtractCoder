@@ -417,7 +417,7 @@ def run(args):
             key_word_list = extractor.generate(training_examples, args.generator_max_generation_length, num_return_sequences=4)
             process_key_word_list = [[_postprocess_keywords(text) for text in sample] for sample in key_word_list]
             _, retrieved_codeblocks = retrieve_codeblocks(args, training_examples, process_key_word_list, bm25, name, is_training=True)
-            losses, best_retrieve_codeblocks, best_key_word_lists = generator.evaluate_samples(training_examples, retrieved_codeblocks, key_word_list)
+            losses, best_retrieve_codeblocks, best_key_word_lists = generator.evaluate_samples(training_examples, retrieved_codeblocks, process_key_word_list)
 
             results["Total Samples"] = len(training_examples)
 
